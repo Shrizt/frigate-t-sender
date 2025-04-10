@@ -1,0 +1,20 @@
+frigate:
+  mqtt_broker: "localhost"
+  mqtt_topic: "frigate/events"
+  event_zone: "zone1"
+  camera_whitelist:
+    - default_cam
+  min_event_interval: 10
+
+storage:
+  clip_duration: 8
+
+telegram:
+  bot_token: "your_token_here"
+  chat_id: "your_chat_id_here"
+  mute_durations:
+    short: 300
+    long: 3600
+
+server:
+  frigate_api: "http://localhost:5000/api/events"
