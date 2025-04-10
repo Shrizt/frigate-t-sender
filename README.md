@@ -1,4 +1,4 @@
-# Frigate Telegram Bot
+# Frigate Telegram Sender
 
 A lightweight Python-based notification bot that listens to Frigate MQTT events and sends annotated alerts and video clips to Telegram.
 
@@ -39,29 +39,7 @@ project-root/
 
 Create your config in `config/config.yaml` or let the bot auto-generate a default one.
 
-**Example: `config.yaml`**
-
-```yaml
-frigate:
-  mqtt_broker: "mqtt.local"
-  mqtt_topic: "frigate/events"
-  event_zone: "notify"
-  camera_whitelist: ["front_door"]
-  min_event_interval: 30
-
-storage:
-  clip_duration: 8
-
-telegram:
-  bot_token: "your_bot_token"
-  chat_id: "your_chat_id"
-  mute_durations:
-    short: 300
-    long: 3600
-
-server:
-  frigate_api: "http://frigate.local:5000/api/events"
-```
+**Default: `config.yaml`** - will be created on first run if not exist (config_default.yaml is included to project)
 
 ---
 
@@ -95,8 +73,8 @@ python main.py
 ### Override default paths via ENV:
 
 ```bash
-export CONFIG_PATH=./config/config.yaml
-export CACHE_DIR=./cache
+export FTS_CONFIG_PATH=./config/config.yaml
+export FTS_CACHE_DIR=./cache
 python main.py
 ```
 
@@ -106,6 +84,7 @@ python main.py
 
 - `/muteshort` – mute notifications for short duration
 - `/mutelong` – mute for longer period
+* not yet implemented - will send silent messages if muted
 
 ---
 
