@@ -3,18 +3,12 @@ import requests
 import json
 import os
 import time
-import logging
+from logger import ulog
 from datetime import datetime
 from config import load_config
 from globals import *
 
-os.makedirs(CACHE_DIR, exist_ok=True)
-os.makedirs(CONFIG_PATH, exist_ok=True)
-
 config = load_config(CONFIG_FILE)
-
-# Setup logging
-logging.basicConfig(filename=LOG_FILE, encoding='utf-8', level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Extract settings from config
 MQTT_BROKER = config["frigate"]["mqtt_broker"]
@@ -63,7 +57,7 @@ def send_telegram_message(text, muted=False):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "disable_notification": muted}
     response = requests.post(url, json=payload)
-    logging.debug(f"Sent Telegram message: {text} | Response: {response.status_code}")
+    ulog.debug(f"Sent Telegram message: {text} | Response: {response.status_code}")
 
 def send_telegram_video(file_path, caption, muted=False):
     """Send a video file to Telegram"""
@@ -75,7 +69,7 @@ def send_telegram_video(file_path, caption, muted=False):
     if response.status_code != 200:
         send_telegram_message(f"Send Telegram video error: {file_path} | Response: {response.status_code} - {response.text}")
     else:
-        logging.debug(f"Sent Telegram video: {file_path} | Response: {response.status_code} - {response.text}")   
+        ulog.debug(f"Sent Telegram video: {file_path} | Response: {response.status_code} - {response.text}")   
         os.remove(file_path);
         
 
@@ -87,9 +81,9 @@ def download_file(url, filename):
             for chunk in response.iter_content(1024):
                 file.write(chunk)
         file_size = os.path.getsize(filename)  # Get actual file size                
-        logging.debug(f"Downloaded file: {url} to {filename} \n Size: {file_size}")
+        ulog.debug(f"Downloaded file: {url} to {filename} \n Size: {file_size}")
         return file_size
-    logging.error(f"Failed to download video: {url} | Status: {response.status_code}")
+    ulog.error(f"Failed to download video: {url} | Status: {response.status_code}")
     send_telegram_message(f"Failed to download video: {url} | Status: {response.status_code}")
     return -1
 
@@ -99,15 +93,15 @@ def download_content(event_id, camera):
     event_url = f"{FRIGATE_API}/{event_id}/"   
     video_size = download_file(f"{event_url}clip.mp4",f"{STORAGE_PATH}/{camera}.mp4")
     if video_size == 0:
-        logging.debug("file size is 0 - sleeping 5 seconds and retry...")
+        ulog.debug("file size is 0 - sleeping 5 seconds and retry...")
         time.sleep(5)
         video_size = download_file(f"{event_url}clip.mp4",f"{STORAGE_PATH}/{camera}.mp4")        
         if video_size == 0:
-            logging.debug("still_zero_file, sleep 3 more second and second retry")
+            ulog.debug("still_zero_file, sleep 3 more second and second retry")
             time.sleep(3)
             video_size = download_file(f"{event_url}clip.mp4",f"{STORAGE_PATH}/{camera}.mp4")        
             if video_size == 0:
-                logging.error("error_downloading_video after 3 attempts")
+                ulog.error("error_downloading_video after 3 attempts")
 
     download_file(f"{event_url}snapshot.jpg",f"{STORAGE_PATH}/{camera}.jpg")    
 
@@ -115,7 +109,7 @@ def trim_video(input_path, output_path):
     """Trim the video to the specified duration"""
     cmd = f"ffmpeg -i {input_path} -t {CLIP_DURATION} -c copy {output_path} -y"
     os.system(cmd)
-    logging.debug(f"Trimmed video: {output_path}")
+    ulog.debug(f"Trimmed video: {output_path}")
 
 def handle_event(event_data):
     """Process incoming Frigate event"""
@@ -128,31 +122,31 @@ def handle_event(event_data):
     label = after_data.get("label")
 
     if event_type != "end":
-        logging.debug("Skipping event: Not a end event")
+        ulog.debug("Skipping event: Not a end event")
         return
 
     if EVENT_ZONE not in after_data.get("entered_zones", []):
-        logging.debug("Skipping event: end event outside target zone")
+        ulog.debug("Skipping event: end event outside target zone")
         return
 
-    logging.debug(f"MQTT Message Received: {event_data}") #logging only after initial checks
+    ulog.debug(f"MQTT Message Received: {event_data}") #logging only after initial checks
 
     if not after_data.get("has_clip",False):
-        logging.debug("Skipping event: has_clip == False")
+        ulog.debug("Skipping event: has_clip == False")
         return
 
     if camera not in CAMERA_WHITELIST:
-        logging.debug(f"Skipping event: Camera '{camera}' not in whitelist")
+        ulog.debug(f"Skipping event: Camera '{camera}' not in whitelist")
         return
 
     now = time.time()
     last_trigger = last_event_time.get(camera, 0)
     if (now - last_trigger) < MIN_EVENT_INTERVAL:
-        logging.debug(f"Skipping event: Rate limit active for camera '{camera}'")
+        ulog.debug(f"Skipping event: Rate limit active for camera '{camera}'")
         return
     last_event_time[camera] = now
 
-    logging.debug(f"Processing event: {event_id} | Camera: {camera} | Label: {label}")
+    ulog.debug(f"Processing event: {event_id} | Camera: {camera} | Label: {label}")
     time.sleep(0.5) #sleep 0.5 sec - give frigate time to make clip
     download_content(event_id, camera)
     #if video_path:
@@ -190,7 +184,7 @@ def handle_telegram_command(command):
         return
 
     save_state({"mute_until": mute_until})
-    logging.debug(f"Notifications muted until {datetime.fromtimestamp(mute_until)}")
+    ulog.debug(f"Notifications muted until {datetime.fromtimestamp(mute_until)}")
 
 def on_message(client, userdata, msg):
     """MQTT message handler"""
@@ -199,11 +193,11 @@ def on_message(client, userdata, msg):
 
         handle_event(payload)
     except Exception as e:
-        logging.error(f"Error processing MQTT message: {e}")
+        ulog.error(f"Error processing MQTT message: {e}")
 
 def main():
     """Main function to start the MQTT listener"""
-    logging.info("Starting Frigate Event Handler...")
+    ulog.info("Starting Frigate Event Handler...")
 
     try: 
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -218,11 +212,11 @@ def main():
         try:
             client.loop_forever()
         except KeyboardInterrupt:
-            logging.info("Shutting down...")
+            ulog.info("Shutting down...")
             client.disconnect()
 
     except Exception as e:
-        logging.error("error {e}")
+        ulog.error(f"error {e}")
 
 if __name__ == "__main__":
     main()

@@ -11,7 +11,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копируем скриптs
-COPY main.py globals.py config.py config_default.yaml /app/
+COPY main.py globals.py config.py logger.py config_default.yaml /app/
 
 WORKDIR /app
 
@@ -22,4 +22,4 @@ VOLUME ["/config", "/cache"]
 #HEALTHCHECK --interval=30s --timeout=5s --start-period=15s CMD curl -f http://localhost:1883 || exit 1
 
 # Запуск скрипта
-CMD ["python", "main.py"]
+CMD ["python", "-u", "main.py"]
