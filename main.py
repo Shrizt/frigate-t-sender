@@ -4,27 +4,12 @@ import json
 import os
 import time
 from logger import ulog
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import load_config
 from globals import *
 
+
 config = load_config(CONFIG_FILE)
-
-# Extract settings from config
-MQTT_BROKER = config["frigate"]["mqtt_broker"]
-MQTT_TOPIC = config["frigate"]["mqtt_topic"]
-EVENT_ZONE = config["frigate"]["event_zone"]
-CAMERA_WHITELIST = set(config["frigate"]["camera_whitelist"])
-MIN_EVENT_INTERVAL = config["frigate"]["min_event_interval"]
-CLIP_DURATION = config["storage"]["clip_duration"]
-
-TELEGRAM_BOT_TOKEN = config["telegram"]["bot_token"]
-TELEGRAM_CHAT_ID = config["telegram"]["chat_id"]
-MUTE_DURATIONS = config["telegram"]["mute_durations"]
-
-STORAGE_PATH = CACHE_DIR
-
-FRIGATE_API = config["server"]["frigate_api"]
 
 last_event_time = {}
 
@@ -54,22 +39,22 @@ def frigate_event_to_text(event_data):
 
 def send_telegram_message(text, muted=False):
     """Send a message to Telegram"""
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "disable_notification": muted}
+    url = f"https://api.telegram.org/bot{config.telegram.bot_token}/sendMessage"
+    payload = {"chat_id": config.telegram.chat_id, "text": text, "disable_notification": muted}
     response = requests.post(url, json=payload)
-    ulog.debug(f"Sent Telegram message: {text} | Response: {response.status_code}")
+    ulog.debug(f"Sent Telegram message (Silent:{muted}): {text} | Response: {response.status_code}")
 
 def send_telegram_video(file_path, caption, muted=False):
     """Send a video file to Telegram"""
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
+    url = f"https://api.telegram.org/bot{config.telegram.bot_token}/sendVideo"
     with open(file_path, "rb") as video:
         files = {"video": video}
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "caption": caption, "disable_notification": muted}
+        payload = {"chat_id": config.telegram.chat_id, "caption": caption, "disable_notification": muted}
         response = requests.post(url, data=payload, files=files)    
     if response.status_code != 200:
         send_telegram_message(f"Send Telegram video error: {file_path} | Response: {response.status_code} - {response.text}")
     else:
-        ulog.debug(f"Sent Telegram video: {file_path} | Response: {response.status_code} - {response.text}")   
+        ulog.debug(f"Sent Telegram video (Silent:{muted}): {file_path} | Response: {response.status_code} - {response.text}")   
         os.remove(file_path);
         
 
@@ -90,24 +75,24 @@ def download_file(url, filename):
 
 def download_content(event_id, camera):
     """Download video clip from Frigate API"""
-    event_url = f"{FRIGATE_API}/{event_id}/"   
-    video_size = download_file(f"{event_url}clip.mp4",f"{STORAGE_PATH}/{camera}.mp4")
+    event_url = f"{config.frigate.frigate_api}/{event_id}/"   
+    video_size = download_file(f"{event_url}clip.mp4",f"{CACHE_DIR}/{camera}.mp4")
     if video_size == 0:
         ulog.debug("file size is 0 - sleeping 5 seconds and retry...")
         time.sleep(5)
-        video_size = download_file(f"{event_url}clip.mp4",f"{STORAGE_PATH}/{camera}.mp4")        
+        video_size = download_file(f"{event_url}clip.mp4",f"{CACHE_DIR}/{camera}.mp4")        
         if video_size == 0:
             ulog.debug("still_zero_file, sleep 3 more second and second retry")
             time.sleep(3)
-            video_size = download_file(f"{event_url}clip.mp4",f"{STORAGE_PATH}/{camera}.mp4")        
+            video_size = download_file(f"{event_url}clip.mp4",f"{CACHE_DIR}/{camera}.mp4")        
             if video_size == 0:
                 ulog.error("error_downloading_video after 3 attempts")
 
-    download_file(f"{event_url}snapshot.jpg",f"{STORAGE_PATH}/{camera}.jpg")    
+    download_file(f"{event_url}snapshot.jpg",f"{CACHE_DIR}/{camera}.jpg")    
 
 def trim_video(input_path, output_path):
     """Trim the video to the specified duration"""
-    cmd = f"ffmpeg -i {input_path} -t {CLIP_DURATION} -c copy {output_path} -y"
+    cmd = f"ffmpeg -i {input_path} -t {config.storage.clip_duration} -c copy {output_path} -y"
     os.system(cmd)
     ulog.debug(f"Trimmed video: {output_path}")
 
@@ -125,7 +110,7 @@ def handle_event(event_data):
         ulog.debug("Skipping event: Not a end event")
         return
 
-    if EVENT_ZONE not in after_data.get("entered_zones", []):
+    if config.frigate.event_zone not in after_data.get("entered_zones", []):
         ulog.debug("Skipping event: end event outside target zone")
         return
 
@@ -135,13 +120,13 @@ def handle_event(event_data):
         ulog.debug("Skipping event: has_clip == False")
         return
 
-    if camera not in CAMERA_WHITELIST:
+    if camera not in config.frigate.camera_whitelist:
         ulog.debug(f"Skipping event: Camera '{camera}' not in whitelist")
         return
 
     now = time.time()
     last_trigger = last_event_time.get(camera, 0)
-    if (now - last_trigger) < MIN_EVENT_INTERVAL:
+    if (now - last_trigger) < config.frigate.min_event_interval:
         ulog.debug(f"Skipping event: Rate limit active for camera '{camera}'")
         return
     last_event_time[camera] = now
@@ -154,7 +139,7 @@ def handle_event(event_data):
         #trim_video(video_path, trimmed_path)
         #send_telegram_video(trimmed_path, f"{label} detected on {camera}")  
 
-    send_telegram_video(f"{STORAGE_PATH}/{camera}.mp4", frigate_event_to_text(event_data), check_mute_state())
+    send_telegram_video(f"{CACHE_DIR}/{camera}.mp4", frigate_event_to_text(event_data), check_mute_state())
 
 def load_state():
     """Load mute state from file"""
@@ -177,14 +162,18 @@ def check_mute_state():
 def handle_telegram_command(command):
     """Process Telegram mute commands"""
     if command == "/muteshort":
-        mute_until = time.time() + MUTE_DURATIONS["short"]
+        mute_until = time.time() + config.telegram.mute_durations["short"]
     elif command == "/mutelong":
-        mute_until = time.time() + MUTE_DURATIONS["long"]
+        mute_until = time.time() + config.telegram.mute_durations["long"]
     else:
         return
 
     save_state({"mute_until": mute_until})
     ulog.debug(f"Notifications muted until {datetime.fromtimestamp(mute_until)}")
+
+def on_connect(client, userdata, flags, reason_code, properties):
+    ulog.info(f"Connected MQTT with reason code {reason_code}")
+    client.subscribe(config.mqtt.mqtt_topic)
 
 def on_message(client, userdata, msg):
     """MQTT message handler"""
@@ -200,23 +189,44 @@ def main():
     ulog.info("Starting Frigate Event Handler...")
 
     try: 
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,SCRIPT_ID)
         client.on_message = on_message
-        client.connect(MQTT_BROKER, 1883, 60)
-        client.subscribe(MQTT_TOPIC)
+        client.on_connect = on_connect
+        client.connect(config.mqtt.mqtt_broker, config.mqtt.mqtt_port, config.mqtt.mqtt_keepalive)        
         
-        
-        send_telegram_message("Video notify bot started",True)
-
-
-        try:
-            client.loop_forever()
-        except KeyboardInterrupt:
-            ulog.info("Shutting down...")
-            client.disconnect()
-
+        send_telegram_message(f"Video notify bot started - {SCRIPT_ID}",True)
+        client.loop_forever()
+        ulog.info("mqtt loop exited!")
     except Exception as e:
-        ulog.error(f"error {e}")
-
+        client.disconnect()
+        ulog.error(f"main func/mqtt error {e}")
+        raise Exception(f"main func/mqtt error {e}")
 if __name__ == "__main__":
-    main()
+    retry_times = 0
+    last_retry = datetime.now()
+
+    while True:
+        try:
+            main()
+        except Exception as e:
+            ulog.error(f"Main crashed: {e}")                                                
+            
+            if (last_retry-datetime.now())>timedelta(minutes=config.engine.retry_window): 
+                retry_times = 0
+
+            retry_times+=1
+            last_retry = datetime.now()
+
+            if retry_times > config.engine.retry_count:
+                ulog.error(f"Exceeded {config.engine.retry_count} retries within {config.engine.retry_window}. Stopping.")
+                break
+
+            ulog.info(f"Retrying in 5 seconds... ({retry_times} retries in last hour)\n")
+            time.sleep(5)
+        else:
+            ulog.info(f"Main func exited, restart in 5 sec...\n")
+            time.sleep(5)
+    send_telegram_message(f"Video notify bot finished - {SCRIPT_ID}",True)
+    ulog.info("script end...")            
+
+

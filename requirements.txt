@@ -1,3 +1,5 @@
 paho-mqtt
 requests
 pyyaml
+pydantic
+ruamel.yaml

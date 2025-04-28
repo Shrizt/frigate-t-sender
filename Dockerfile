@@ -1,25 +1,25 @@
 FROM python:3-alpine
 
-# Установим ffmpeg и необходимые зависимости
+# Install ffmpeg + dependencies
 #RUN apt-get update && \
 #    apt-get install -y ffmpeg && \
 #    apt-get clean && \
 #    rm -rf /var/lib/apt/lists/*
 
-# Установим Python-зависимости
+# Install Python-req
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем скриптs
-COPY main.py globals.py config.py logger.py config_default.yaml /app/
+# Copy app
+COPY main.py globals.py config.py logger.py /app/
 
 WORKDIR /app
 
-# Объявляем volume для конфигурации и кэша
+# Volumes for config and cache
 VOLUME ["/config", "/cache"]
 
-# HEALTHCHECK: проверяет, что контейнер жив, раз в 30 сек
+# HEALTHCHECK: todo
 #HEALTHCHECK --interval=30s --timeout=5s --start-period=15s CMD curl -f http://localhost:1883 || exit 1
 
-# Запуск скрипта
+# run with console output uncached
 CMD ["python", "-u", "main.py"]
